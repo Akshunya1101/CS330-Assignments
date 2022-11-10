@@ -92,7 +92,7 @@ struct proc {
   int killed;                  // If non-zero, have been killed
   int xstate;                  // Exit status to be returned to parent's wait
   int pid;                     // Process ID
-
+  int base_priority;
   // wait_lock must be held when using this:
   struct proc *parent;         // Parent process
 
@@ -109,4 +109,13 @@ struct proc {
   int ctime;		       // Creation time
   int stime;		       // Execution start time
   int endtime;		       // Execution end time
+  int wtime;
+  uint sticks;
+  uint eticks;
+
+  int flag;
+  uint est;
+
+  int priority;
+  int cpu_usage;
 };

@@ -15,6 +15,15 @@ struct proc *initproc;
 
 int nextpid = 1;
 struct spinlock pid_lock;
+extern int curr_policy;
+
+int batch_size = 0;
+int counter = 0;
+uint bursts = 0, burst_max = 0, burst_min = 0, burst_len = 0;
+uint est_burst_max = 0, est_burst_min = 0, est_burst_len = 0;
+uint err_bursts = 0, error = 0;
+uint burst = 0;
+int min_priority = 0;
 
 extern void forkret(void);
 static void freeproc(struct proc *p);
@@ -30,6 +39,7 @@ struct spinlock wait_lock;
 // Allocate a page for each process's kernel stack.
 // Map it high in memory, followed by an invalid
 // guard page.
+
 void
 proc_mapstacks(pagetable_t kpgtbl) {
   struct proc *p;
@@ -146,11 +156,17 @@ found:
   acquire(&tickslock);
   xticks = ticks;
   release(&tickslock);
-
+  p->base_priority = 0;
   p->ctime = xticks;
   p->stime = -1;
   p->endtime = -1;
-
+  p->wtime = 0;
+  p->sticks = 0;
+  p->eticks = 0;
+  p->flag = 0;
+  p->est = 0;
+  p->cpu_usage = 0;
+  p->priority = 0;
   return p;
 }
 
@@ -329,6 +345,60 @@ fork(void)
 }
 
 int
+forkp(int pval)
+{
+  int i, pid;
+  struct proc *np;
+  struct proc *p = myproc();
+  
+  // Allocate process.
+  if((np = allocproc()) == 0){
+    return -1;
+  }
+
+  // Copy user memory from parent to child.
+  if(uvmcopy(p->pagetable, np->pagetable, p->sz) < 0){
+    freeproc(np);
+    release(&np->lock);
+    return -1;
+  }
+  np->sz = p->sz;
+  np->base_priority = pval;
+  batch_size++;
+  counter++;
+  // copy saved user registers.
+  *(np->trapframe) = *(p->trapframe);
+  np->flag = 1;
+  // Cause fork to return 0 in the child.
+  np->trapframe->a0 = 0;
+np->base_priority = pval;
+  np->priority = np->base_priority;
+  if(min_priority == 0 || (min_priority && min_priority > np->base_priority)){
+    min_priority = np->base_priority;
+  }
+  // increment reference counts on open file descriptors.
+  for(i = 0; i < NOFILE; i++)
+    if(p->ofile[i])
+      np->ofile[i] = filedup(p->ofile[i]);
+  np->cwd = idup(p->cwd);
+
+  safestrcpy(np->name, p->name, sizeof(p->name));
+
+  pid = np->pid;
+
+  release(&np->lock);
+
+  acquire(&wait_lock);
+  np->parent = p;
+  release(&wait_lock);
+
+  acquire(&np->lock);
+  np->state = RUNNABLE;
+  release(&np->lock);
+  return pid;
+}
+
+int
 forkf(uint64 faddr)
 {
   int i, pid;
@@ -402,7 +472,6 @@ exit(int status)
 {
   struct proc *p = myproc();
   uint xticks;
-
   if(p == initproc)
     panic("init exiting");
 
@@ -431,16 +500,109 @@ exit(int status)
   acquire(&p->lock);
 
   p->xstate = status;
-  p->state = ZOMBIE;
-
+  p->state = ZOMBIE;    
   release(&wait_lock);
 
   acquire(&tickslock);
   xticks = ticks;
   release(&tickslock);
-
   p->endtime = xticks;
+  uint zticks;
+    if (!holding(&tickslock)) {
+        acquire(&tickslock);
+        zticks = ticks;
+        release(&tickslock);
+    }
+    else 
+        zticks = ticks;
+  p->eticks = zticks;
+  if(p->flag == 1 && p->eticks > p->sticks){
+    bursts++;
+    burst_len = burst_len + p->eticks - p->sticks;
+    if(burst_max < p->eticks - p->sticks){
+        burst_max = p->eticks - p->sticks;
+    }
+    if(burst_min == 0){
+        burst_min = p->eticks - p->sticks;
+    }
+    else if(burst_min > p->eticks - p->sticks){
+        burst_min = p->eticks - p->sticks;
+    }
+    if(p->est > 0){
+        err_bursts++;
+    }
+    if(p->est > p->eticks - p->sticks){
+        error = error + p->est - p->eticks + p->sticks;
+    }
+    else{
+        error = error + p->eticks - p->sticks - p->est;
+    }
+  }
+  int start_min = 0, end_max = 0, ta = 0, waiting = 0, comp_time = 0, max_comp = 0, min_comp = 0;
+    struct proc* np;
+    for(np = proc; np < &proc[NPROC]; np++) {
+        if(np->flag == 1){
+            if(start_min == 0){
+                start_min = np->stime;
+            }
+            else if(start_min > np->stime){
+                start_min = np->stime;
+            }
+            if(end_max < np->endtime){
+                end_max = np->endtime;
+            }
+            ta = ta + np->endtime - np->ctime;
+            waiting = waiting + np->wtime;
+            comp_time = comp_time + np->endtime;
+            if(max_comp < np->endtime){
+                max_comp = np->endtime;
+            }
+            if(min_comp == 0){
+                min_comp = np->endtime;
+            }
+            else if(min_comp > np->endtime){
+                min_comp = np->endtime;
+            }
+        }
+    }
+    burst = 0;
+    min_priority = 0;
+    for(np = proc; np < &proc[NPROC]; np++) {
+        if(np->state == RUNNABLE && np->flag == 1){
+            if(burst == 0){
+                burst = np->est;
+            }
+            else if(burst > np->est){
+                burst = np->est;
+            }
+            if(min_priority == 0){
+                min_priority = np->priority;
+            }
+            else if(min_priority > np->priority){
+                min_priority = np->priority;
+            }
+        }
+    }
+    if(p->flag == 1)
+        counter--;
+    if(counter == 0 && p->flag == 1){
+        printf("Batch execution time: %d\n",end_max - start_min);
+        printf("Average turn-around time: %d\n",ta/batch_size);
+        printf("Average waiting time: %d\n",waiting/batch_size);
+        printf("Completion time: avg: %d, max: %d, min: %d\n",comp_time/batch_size,max_comp,min_comp);
+        if(curr_policy == SCHED_NPREEMPT_SJF){
+            printf("CPU bursts: count: %d, avg: %d, max: %d, min: %d\n",bursts,burst_len/bursts,burst_max,burst_min);
+            printf("CPU burst estimates: count: %d, avg: %d, max: %d, min: %d\n",bursts,est_burst_len/bursts,est_burst_max,est_burst_min);
+            printf("CPU burst estimation error: count: %d, avg: %d\n",err_bursts,error/err_bursts);
 
+        }
+        bursts = 0, burst_max = 0, burst_min = 0, burst_len = 0;
+        est_burst_max = 0, est_burst_min = 0, est_burst_len = 0;
+        err_bursts = 0, error = 0;
+        burst = 0;
+        min_priority = 0;
+        batch_size = 0;
+    }
   // Jump into the scheduler, never to return.
   sched();
   panic("zombie exit");
@@ -552,18 +714,51 @@ scheduler(void)
 {
   struct proc *p;
   struct cpu *c = mycpu();
-  
+  int check = 0;
   c->proc = 0;
   for(;;){
     // Avoid deadlock by ensuring that devices can interrupt.
-    intr_on();
-
+    intr_on(); 
     for(p = proc; p < &proc[NPROC]; p++) {
+      if(curr_policy != SCHED_PREEMPT_RR && check == 0){
+        check = 1;
+        break;
+      }
       acquire(&p->lock);
       if(p->state == RUNNABLE) {
         // Switch to chosen process.  It is the process's job
         // to release its lock and then reacquire it
         // before jumping back to us.
+        if(p->flag == 1){
+            if(curr_policy == SCHED_NPREEMPT_SJF && p->est > burst && burst != 0){
+                release(&p->lock);
+                continue;
+            }
+            if(curr_policy == SCHED_PREEMPT_UNIX && p->priority > min_priority && min_priority != 0){
+                release(&p->lock);
+                continue;
+            }
+            uint zticks;
+            if (!holding(&tickslock)) {
+                acquire(&tickslock);
+                zticks = ticks;
+                release(&tickslock);
+            }
+            else 
+                zticks = ticks;
+            p->sticks = zticks;
+            p->wtime = p->wtime + p->sticks - p->eticks;
+            est_burst_len = est_burst_len + p->est;
+            if(p->est > est_burst_max){
+                est_burst_max = p->est;
+            }
+            if(est_burst_min == 0){
+                est_burst_min = p->est;
+            }
+            else if(p->est < est_burst_min){
+                est_burst_min = p->est;
+            }
+        }
         p->state = RUNNING;
         c->proc = p;
         swtch(&c->context, &p->context);
@@ -611,6 +806,70 @@ yield(void)
   struct proc *p = myproc();
   acquire(&p->lock);
   p->state = RUNNABLE;
+  uint zticks;
+    if (!holding(&tickslock)) {
+        acquire(&tickslock);
+        zticks = ticks;
+        release(&tickslock);
+    }
+    else 
+        zticks = ticks;
+  p->eticks = zticks;
+    p->cpu_usage += SCHED_PARAM_CPU_USAGE;
+  if(p->flag == 1 && p->eticks > p->sticks){
+    bursts++;
+    burst_len = burst_len + p->eticks - p->sticks;
+    if(burst_max < p->eticks - p->sticks){
+        burst_max = p->eticks - p->sticks;
+    }
+    if(burst_min == 0){
+        burst_min = p->eticks - p->sticks;
+    }
+    else if(burst_min > p->eticks - p->sticks){
+        burst_min = p->eticks - p->sticks;
+    }
+    if(p->est > 0){
+        err_bursts++;
+    }
+    if(p->est > p->eticks - p->sticks){
+        error = error + p->est - p->eticks + p->sticks;
+    }
+    else{
+        error = error + p->eticks - p->sticks - p->est;
+    }
+  }
+  p->cpu_usage = p->cpu_usage/2;
+  p->priority = p->base_priority + p->cpu_usage/2;
+  struct proc* np;
+    uint t = p->eticks - p->sticks;
+    uint s = p->est;
+    p->est = t - (SCHED_PARAM_SJF_A_NUMER*t)/SCHED_PARAM_SJF_A_DENOM + (SCHED_PARAM_SJF_A_NUMER*s)/SCHED_PARAM_SJF_A_DENOM;
+    for(np = proc; np < &proc[NPROC]; np++) {
+        if(np!=p && np->state == RUNNABLE && np->flag == 1){
+            acquire(&np->lock);
+              np->cpu_usage = np->cpu_usage/2;
+              np->priority = np->base_priority + np->cpu_usage/2;
+            release(&np->lock);
+        }
+    }
+    burst = 0;
+    min_priority = 0;
+    for(np = proc; np < &proc[NPROC]; np++) {
+        if(np->state == RUNNABLE && np->flag == 1){
+            if(burst == 0){
+                burst = np->est;
+            }
+            else if(burst > np->est){
+                burst = np->est;
+            }
+            if(min_priority == 0){
+                min_priority = np->priority;
+            }
+            else if(min_priority > np->priority){
+                min_priority = np->priority;
+            }
+        }
+    }
   sched();
   release(&p->lock);
 }
@@ -663,7 +922,70 @@ sleep(void *chan, struct spinlock *lk)
   // Go to sleep.
   p->chan = chan;
   p->state = SLEEPING;
-
+  uint zticks;
+    if (!holding(&tickslock)) {
+        acquire(&tickslock);
+        zticks = ticks;
+        release(&tickslock);
+    }
+    else 
+        zticks = ticks;
+  p->eticks = zticks;
+    p->cpu_usage += (SCHED_PARAM_CPU_USAGE)/2;
+  if(p->flag == 1 && p->eticks > p->sticks){
+    bursts++;
+    burst_len = burst_len + p->eticks - p->sticks;
+    if(burst_max < p->eticks - p->sticks){
+        burst_max = p->eticks - p->sticks;
+    }
+    if(burst_min == 0){
+        burst_min = p->eticks - p->sticks;
+    }
+    else if(burst_min > p->eticks - p->sticks){
+        burst_min = p->eticks - p->sticks;
+    }
+    if(p->est > 0){
+        err_bursts++;
+    }
+    if(p->est > p->eticks - p->sticks){
+        error = error + p->est - p->eticks + p->sticks;
+    }
+    else{
+        error = error + p->eticks - p->sticks - p->est;
+    }
+  }
+  p->cpu_usage = p->cpu_usage/2;
+  p->priority = p->base_priority + p->cpu_usage/2;
+  struct proc* np;
+    uint t = p->eticks - p->sticks;
+    uint s = p->est;
+    p->est = t - (SCHED_PARAM_SJF_A_NUMER*t)/SCHED_PARAM_SJF_A_DENOM + (SCHED_PARAM_SJF_A_NUMER*s)/SCHED_PARAM_SJF_A_DENOM;
+    for(np = proc; np < &proc[NPROC]; np++) {
+        if(np!=p && np->state == RUNNABLE && np->flag == 1){
+            acquire(&np->lock);
+              np->cpu_usage = np->cpu_usage/2;
+              np->priority = np->base_priority + np->cpu_usage/2;
+            release(&np->lock);
+        }
+    }
+    burst = 0;
+    min_priority = 0;
+    for(np = proc; np < &proc[NPROC]; np++) {
+        if(np->state == RUNNABLE && np->flag == 1){
+            if(burst == 0){
+                burst = np->est;
+            }
+            else if(burst > np->est){
+                burst = np->est;
+            }
+            if(min_priority == 0){
+                min_priority = np->priority;
+            }
+            else if(min_priority > np->priority){
+                min_priority = np->priority;
+            }
+        }
+    }
   sched();
 
   // Tidy up.
@@ -891,4 +1213,10 @@ pinfo(int pid, uint64 addr)
      return 0;
   }
   else return -1;
+}
+
+int schedpolicy(int policy){
+    int old_policy = curr_policy;
+    curr_policy = policy;
+    return old_policy;
 }

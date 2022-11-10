@@ -165,3 +165,27 @@ sys_pinfo(void)
   if ((x == 0) || (x < -1) || (p == 0)) return -1;
   return pinfo(x, p);
 }
+
+uint64
+sys_schedpolicy(void)
+{
+  int x;
+
+  if(argint(0, &x) < 0)
+    return -1;
+
+  return schedpolicy(x);
+}
+
+uint64
+sys_forkp(void)
+{
+  int x;
+
+  if(argint(0, &x) < 0)
+    return -1;
+
+  return forkp(x);
+}
+
+

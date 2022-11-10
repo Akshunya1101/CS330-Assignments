@@ -5,6 +5,7 @@
 #include "defs.h"
 
 volatile static int started = 0;
+int curr_policy = SCHED_PREEMPT_RR;
 
 // start() jumps here in supervisor mode on all CPUs.
 void

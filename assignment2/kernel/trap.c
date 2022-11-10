@@ -15,6 +15,7 @@ extern char trampoline[], uservec[], userret[];
 void kernelvec();
 
 extern int devintr();
+extern int curr_policy;
 
 void
 trapinit(void)
@@ -77,7 +78,7 @@ usertrap(void)
     exit(-1);
 
   // give up the CPU if this is a timer interrupt.
-  if(which_dev == 2)
+  if(which_dev == 2 && (curr_policy != SCHED_NPREEMPT_FCFS && curr_policy != SCHED_NPREEMPT_SJF))
     yield();
 
   usertrapret();
@@ -150,7 +151,7 @@ kerneltrap()
   }
 
   // give up the CPU if this is a timer interrupt.
-  if(which_dev == 2 && myproc() != 0 && myproc()->state == RUNNING)
+  if(which_dev == 2 && myproc() != 0 && myproc()->state == RUNNING && (curr_policy != SCHED_NPREEMPT_FCFS && curr_policy != SCHED_NPREEMPT_SJF))
     yield();
 
   // the yield() may have caused some traps to occur,
