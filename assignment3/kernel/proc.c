@@ -1055,7 +1055,6 @@ wakeupone(void *chan)
 {
   struct proc *p;
   uint xticks;
-  uint waken=0;
 
   if (!holding(&tickslock)) {
      acquire(&tickslock);
@@ -1064,13 +1063,14 @@ wakeupone(void *chan)
   }
   else xticks = ticks;
 
+  int waken=0;
   for(p = proc; p < &proc[NPROC]; p++) {
     if(p != myproc()){
       acquire(&p->lock);
       if(p->state == SLEEPING && p->chan == chan) {
         p->state = RUNNABLE;
+	      p->waitstart = xticks;
         waken = 1;
-	p->waitstart = xticks;
       }
       release(&p->lock);
       if(waken)

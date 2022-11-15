@@ -207,15 +207,15 @@ sys_barrier(void)
 
   int barr_inst, barr_id, n;
   if(argint(0, &barr_inst) < 0){
-    return -1;;
+    return -1;
   }
 
   if(argint(1, &barr_id) < 0){
-    return -1;;
+    return -1;
   }
 
   if(argint(2, &n) < 0){
-    return -1;;
+    return -1;
   }
 
   if(barr[barr_id].counter == -1){
