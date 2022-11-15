@@ -150,3 +150,48 @@ schedpolicy:
  li a7, SYS_schedpolicy
  ecall
  ret
+.global barrier_alloc
+barrier_alloc:
+ li a7, SYS_barrier_alloc
+ ecall
+ ret
+.global barrier
+barrier:
+ li a7, SYS_barrier
+ ecall
+ ret
+.global barrier_free
+barrier_free:
+ li a7, SYS_barrier_free
+ ecall
+ ret
+.global buffer_cond_init
+buffer_cond_init:
+ li a7, SYS_buffer_cond_init
+ ecall
+ ret
+.global cond_produce
+cond_produce:
+ li a7, SYS_cond_produce
+ ecall
+ ret
+.global cond_consume
+cond_consume:
+ li a7, SYS_cond_consume
+ ecall
+ ret
+.global buffer_sem_init
+buffer_sem_init:
+ li a7, SYS_buffer_sem_init
+ ecall
+ ret
+.global sem_produce
+sem_produce:
+ li a7, SYS_sem_produce
+ ecall
+ ret
+.global sem_consume
+sem_consume:
+ li a7, SYS_sem_consume
+ ecall
+ ret

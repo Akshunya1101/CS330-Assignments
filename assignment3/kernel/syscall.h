@@ -30,3 +30,12 @@
 #define SYS_pinfo   28
 #define SYS_forkp   29
 #define SYS_schedpolicy 30
+#define SYS_barrier 31
+#define SYS_barrier_free 32
+#define SYS_barrier_alloc 33
+#define SYS_buffer_cond_init 34
+#define SYS_cond_produce 35
+#define SYS_cond_consume 36
+#define SYS_buffer_sem_init 37
+#define SYS_sem_consume 38
+#define SYS_sem_produce 39

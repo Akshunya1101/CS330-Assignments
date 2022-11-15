@@ -8,6 +8,8 @@ struct spinlock;
 struct sleeplock;
 struct stat;
 struct superblock;
+struct cond_t;
+struct sem_t;
 
 // bio.c
 void            binit(void);
@@ -97,9 +99,11 @@ void            procinit(void);
 void            scheduler(void) __attribute__((noreturn));
 void            sched(void);
 void            sleep(void*, struct spinlock*);
+void            condsleep(struct cond_t*, struct sleeplock*);
 void            userinit(void);
 int             wait(uint64);
 void            wakeup(void*);
+void            wakeupone(void*);
 void            yield(void);
 int             either_copyout(int user_dst, uint64 dst, void *src, uint64 len);
 int             either_copyin(void *dst, int user_src, uint64 src, uint64 len);
@@ -190,3 +194,13 @@ void            virtio_disk_intr(void);
 
 // number of elements in fixed-size array
 #define NELEM(x) (sizeof(x)/sizeof((x)[0]))
+
+// condvar.c
+void cond_wait (struct cond_t *cv, struct sleeplock *lock);
+void cond_signal (struct cond_t *cv);
+void cond_broadcast (struct cond_t *cv);
+
+// semaphore.c
+void sem_init (struct sem_t *z, int value);
+void sem_wait (struct sem_t *z);
+void sem_post (struct sem_t *z);

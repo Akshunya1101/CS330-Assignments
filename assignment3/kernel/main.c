@@ -3,10 +3,16 @@
 #include "memlayout.h"
 #include "riscv.h"
 #include "defs.h"
+#include "barrier.h"
+#include "condvar.h"
+#include "bufferelem.h"
 
 volatile static int started = 0;
 
 extern int sched_policy;
+
+extern struct barrier barr[10];
+extern struct buffer_elem buffer[20];
 
 // start() jumps here in supervisor mode on all CPUs.
 void
@@ -44,6 +50,14 @@ main()
   }
 
   sched_policy = SCHED_PREEMPT_RR;
+
+  for (int i = 0; i < 10; i++)
+  {
+    barr[i].counter = -1;
+    initsleeplock(&barr[i].lock, "barrier_lock");
+    initsleeplock(&barr[i].cv.lk, "barrier_cv_lock");
+  }
+  
 
   scheduler();        
 }

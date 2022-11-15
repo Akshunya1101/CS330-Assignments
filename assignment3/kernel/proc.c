@@ -6,6 +6,7 @@
 #include "proc.h"
 #include "defs.h"
 #include "procstat.h"
+#include "condvar.h"
 
 int sched_policy;
 
@@ -961,6 +962,65 @@ sleep(void *chan, struct spinlock *lk)
   acquire(lk);
 }
 
+// Atomically release lock and sleep on chan.
+// Reacquires lock when awakened.
+void
+condsleep(struct cond_t* chan, struct sleeplock *lk)
+{
+  struct proc *p = myproc();
+  uint xticks;
+
+  if (!holding(&tickslock)) {
+     acquire(&tickslock);
+     xticks = ticks;
+     release(&tickslock);
+  }
+  else xticks = ticks;
+  
+  // Must acquire p->lock in order to
+  // change p->state and then call sched.
+  // Once we hold p->lock, we can be
+  // guaranteed that we won't miss any wakeup
+  // (wakeup locks p->lock),
+  // so it's okay to release lk.
+
+  acquire(&p->lock);  //DOC: sleeplock1
+  releasesleep(lk);
+
+  // Go to sleep.
+  p->chan = chan;
+  p->state = SLEEPING;
+
+  p->cpu_usage += (SCHED_PARAM_CPU_USAGE/2);
+
+  if ((p->is_batchproc) && ((xticks - p->burst_start) > 0)) {
+     num_cpubursts++;
+     cpubursts_tot += (xticks - p->burst_start);
+     if (cpubursts_max < (xticks - p->burst_start)) cpubursts_max = xticks - p->burst_start;
+     if (cpubursts_min > (xticks - p->burst_start)) cpubursts_min = xticks - p->burst_start;
+     if (p->nextburst_estimate > 0) {
+	estimation_error += ((p->nextburst_estimate >= (xticks - p->burst_start)) ? (p->nextburst_estimate - (xticks - p->burst_start)) : ((xticks - p->burst_start) - p->nextburst_estimate));
+        estimation_error_instance++;
+     }
+     p->nextburst_estimate = (xticks - p->burst_start) - ((xticks - p->burst_start)*SCHED_PARAM_SJF_A_NUMER)/SCHED_PARAM_SJF_A_DENOM + (p->nextburst_estimate*SCHED_PARAM_SJF_A_NUMER)/SCHED_PARAM_SJF_A_DENOM;
+     if (p->nextburst_estimate > 0) {
+        num_cpubursts_est++;
+        cpubursts_est_tot += p->nextburst_estimate;
+        if (cpubursts_est_max < p->nextburst_estimate) cpubursts_est_max = p->nextburst_estimate;
+        if (cpubursts_est_min > p->nextburst_estimate) cpubursts_est_min = p->nextburst_estimate;
+     }
+  }
+
+  sched();
+
+  // Tidy up.
+  p->chan = 0;
+
+  // Reacquire original lock.
+  release(&p->lock);
+  acquiresleep(lk);
+}
+
 // Wake up all processes sleeping on chan.
 // Must be called without any p->lock.
 void
@@ -984,6 +1044,37 @@ wakeup(void *chan)
 	p->waitstart = xticks;
       }
       release(&p->lock);
+    }
+  }
+}
+
+// Wake up one processes sleeping on chan.
+// Must be called without any p->lock.
+void
+wakeupone(void *chan)
+{
+  struct proc *p;
+  uint xticks;
+  uint waken=0;
+
+  if (!holding(&tickslock)) {
+     acquire(&tickslock);
+     xticks = ticks;
+     release(&tickslock);
+  }
+  else xticks = ticks;
+
+  for(p = proc; p < &proc[NPROC]; p++) {
+    if(p != myproc()){
+      acquire(&p->lock);
+      if(p->state == SLEEPING && p->chan == chan) {
+        p->state = RUNNABLE;
+        waken = 1;
+	p->waitstart = xticks;
+      }
+      release(&p->lock);
+      if(waken)
+        return;
     }
   }
 }

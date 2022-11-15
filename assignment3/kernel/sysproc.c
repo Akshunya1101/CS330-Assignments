@@ -5,7 +5,16 @@
 #include "param.h"
 #include "memlayout.h"
 #include "spinlock.h"
+#include "condvar.h"
 #include "proc.h"
+#include "barrier.h"
+#include "bufferelem.h"
+
+#define SIZE 20
+struct barrier barr[10];
+struct buffer_elem buffer[SIZE];
+int tail, head;
+struct sleeplock lock_delete, lock_insert, lock_print;
 
 uint64
 sys_exit(void)
@@ -180,4 +189,151 @@ sys_schedpolicy(void)
   int x;
   if(argint(0, &x) < 0) return -1;
   return schedpolicy(x);
+}
+
+uint64 
+sys_barrier(void)
+{
+
+  int barr_inst, barr_id, n;
+  if(argint(0, &barr_inst) < 0){
+    return -1;;
+  }
+
+  if(argint(1, &barr_id) < 0){
+    return -1;;
+  }
+
+  if(argint(2, &n) < 0){
+    return -1;;
+  }
+
+  if(barr[barr_id].counter == -1){
+    printf("Barrier array id not allocated\n");
+    return -1;
+  }
+
+  barr[barr_id].counter++ ;
+
+  printf("%d: Entered barrier#%d for barrier array id %d\n", myproc()->pid, barr_inst, barr_id);
+
+
+  if(barr[barr_id].counter != n){
+    cond_wait(&barr[barr_id].cv, &barr[barr_id].lock);
+  }
+  else{
+    barr[barr_id].counter = 0;
+    cond_broadcast(&barr[barr_id].cv);
+  }
+
+  printf("%d: Finished barrier#%d for barrier array id %d\n", myproc()->pid, barr_inst, barr_id);
+  
+  return 0;
+}
+
+uint64 
+sys_barrier_alloc(void)
+{
+    for(int i=0; i<10; ++i){
+      acquiresleep(&barr[i].lock);
+      if(barr[i].counter == -1){
+        barr[i].counter = 0;
+        releasesleep(&barr[i].lock);
+        return i;
+      }
+      releasesleep(&barr[i].lock);
+    } 
+  return -1;
+}
+
+uint64 
+sys_barrier_free(void)
+{
+   int barr_id;
+   if(argint(0, &barr_id) < 0){
+    return -1;
+   }
+   barr[barr_id].counter = -1;
+   initsleeplock(&barr[barr_id].lock, "barrier_lock");
+   initsleeplock(&barr[barr_id].cv.lk, "barrier_cv_lock");
+
+   return 0;
+
+}
+
+uint64
+sys_buffer_cond_init(void)
+{
+  tail = 0;
+  head = 0;
+  initsleeplock(&lock_delete, "delete");
+  initsleeplock(&lock_insert, "insert");
+  initsleeplock(&lock_print, "print");
+  for (int i = 0; i < SIZE; i++) {
+    buffer[i].x = -1;
+    buffer[i].full = 0;
+    initsleeplock(&buffer[i].lock, "buffer_lock");
+    initsleeplock(&buffer[i].inserted.lk, "insert");
+    initsleeplock(&buffer[i].deleted.lk, "delete");
+  }
+  return 0;
+}
+
+uint64
+sys_cond_produce(void)
+{
+  int val;
+  if(argint(0, &val) < 0) return -1;
+  int index;
+  acquiresleep(&lock_insert);
+  index = tail;
+  tail = (tail + 1) % SIZE;
+  releasesleep(&lock_insert);
+  acquiresleep(&buffer[index].lock);
+  while(buffer[index].full)
+    cond_wait(&buffer[index].deleted, &buffer[index].lock);
+  buffer[index].x = val;
+  buffer[index].full = 1;
+  cond_signal(&buffer[index].inserted);
+  releasesleep(&buffer[index].lock);
+  return 0;
+}
+
+uint64
+sys_cond_consume(void)
+{
+  int index, v;
+  acquiresleep(&lock_delete);
+  index = head;
+  head = (head + 1) % SIZE;
+  releasesleep(&lock_delete);
+  acquiresleep(&buffer[index].lock);
+  while (!buffer[index].full)
+    cond_wait(&buffer[index].inserted, &buffer[index].lock);
+  v = buffer[index].x;
+  buffer[index].full = 0;
+  cond_signal(&buffer[index].deleted);
+  releasesleep(&buffer[index].lock);
+  acquiresleep(&lock_print);
+  printf("%d ", v);
+  releasesleep(&lock_print);
+  return v;
+}
+
+uint64
+sys_buffer_sem_init(void)
+{
+  return 0;
+}
+
+uint64
+sys_sem_produce(void)
+{
+  return 0;
+}
+
+uint64
+sys_sem_consume(void)
+{
+  return 0;
 }
