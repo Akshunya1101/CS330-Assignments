@@ -13,6 +13,7 @@ extern int sched_policy;
 
 extern struct barrier barr[10];
 extern struct buffer_elem buffer[20];
+extern int sem_buffer[20];
 
 // start() jumps here in supervisor mode on all CPUs.
 void

@@ -9,12 +9,22 @@
 #include "proc.h"
 #include "barrier.h"
 #include "bufferelem.h"
+#include "semaphore.h"
 
-#define SIZE 20
+
 struct barrier barr[10];
+
+//global variables for condprodconstest
+#define SIZE 20
 struct buffer_elem buffer[SIZE];
 int tail, head;
 struct sleeplock lock_delete, lock_insert, lock_print;
+
+//global variables for semprodconstest
+#define N 20
+int sem_buffer[N];
+int nextp, nextc;
+struct sem_t pro, con, empty, full;
 
 uint64
 sys_exit(void)
@@ -209,7 +219,7 @@ sys_barrier(void)
   }
 
   if(barr[barr_id].counter == -1){
-    printf("Barrier array id not allocated\n");
+    printf("Element with given barrier array id is not allocated\n");
     return -1;
   }
 
@@ -323,17 +333,41 @@ sys_cond_consume(void)
 uint64
 sys_buffer_sem_init(void)
 {
+  nextp = 0;
+  nextc = 0;
+  sem_init(&pro, 1);
+  sem_init(&con, 1);
+  sem_init(&empty, N);
+  sem_init(&full, 0);
   return 0;
 }
 
 uint64
 sys_sem_produce(void)
 {
+  int val;
+  if(argint(0, &val) < 0) return -1;
+  sem_wait(&empty);
+  sem_wait(&pro);
+  sem_buffer[nextp] = val;
+  nextp = (nextp + 1)%N;
+  sem_post (&pro);
+  sem_post (&full);
   return 0;
 }
 
 uint64
 sys_sem_consume(void)
 {
-  return 0;
+  int v;
+  sem_wait (&full);
+  sem_wait (&con);
+  v = sem_buffer[nextc];
+  nextc = (nextc+1)%N;
+  sem_post (&con);
+  sem_post (&empty);
+  acquiresleep(&lock_print);
+  printf("%d ", v);
+  releasesleep(&lock_print);
+  return v;
 }
