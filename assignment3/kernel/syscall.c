@@ -157,7 +157,7 @@ static uint64 (*syscalls[])(void) = {
 [SYS_forkp]   sys_forkp,
 [SYS_schedpolicy] sys_schedpolicy,
 [SYS_barrier_alloc] sys_barrier_alloc,
-[SYS_barrier_free] sys_barrier,
+[SYS_barrier_free] sys_barrier_free,
 [SYS_barrier] sys_barrier,
 [SYS_buffer_cond_init] sys_buffer_cond_init,
 [SYS_cond_produce] sys_cond_produce,

@@ -4,13 +4,14 @@
 
 void sem_init (struct sem_t *z, int value) {
     z->value = value;
-    initsleeplock(&z->cv.lk, "semaphore_cv_lock");
+    cond_init(&z->cv);
     initsleeplock(&z->lock, "semaphore_lock");
 }
 
 void sem_wait (struct sem_t *z) {
 acquiresleep (&z->lock);
-while (z->value == 0) cond_wait (&z->cv, &z->lock);
+while (z->value <= 0)
+    cond_wait (&z->cv, &z->lock);
 z->value--;
 releasesleep (&z->lock);
 }

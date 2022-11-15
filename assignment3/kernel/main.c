@@ -11,7 +11,7 @@ volatile static int started = 0;
 
 extern int sched_policy;
 
-extern struct barrier barr[10];
+extern struct barrier barriers[10];
 extern struct buffer_elem buffer[20];
 extern int sem_buffer[20];
 
@@ -54,9 +54,9 @@ main()
 
   for (int i = 0; i < 10; i++)
   {
-    barr[i].counter = -1;
-    initsleeplock(&barr[i].lock, "barrier_lock");
-    initsleeplock(&barr[i].cv.lk, "barrier_cv_lock");
+    barriers[i].counter = -1;
+    initsleeplock(&barriers[i].lock, "barrier_lock");
+    cond_init(&barriers[i].cv);
   }
   
 

@@ -12,7 +12,7 @@
 #include "semaphore.h"
 
 
-struct barrier barr[10];
+struct barrier barriers[10];
 
 //global variables for condprodconstest
 #define SIZE 20
@@ -205,12 +205,12 @@ uint64
 sys_barrier(void)
 {
 
-  int barr_inst, barr_id, n;
-  if(argint(0, &barr_inst) < 0){
+  int barrier_instance_no, barrier_id, n;
+  if(argint(0, &barrier_instance_no) < 0){
     return -1;
   }
 
-  if(argint(1, &barr_id) < 0){
+  if(argint(1, &barrier_id) < 0){
     return -1;
   }
 
@@ -218,25 +218,25 @@ sys_barrier(void)
     return -1;
   }
 
-  if(barr[barr_id].counter == -1){
+  if(barriers[barrier_id].counter == -1){
     printf("Element with given barrier array id is not allocated\n");
     return -1;
   }
 
-  barr[barr_id].counter++ ;
+  barriers[barrier_id].counter++ ;
 
-  printf("%d: Entered barrier#%d for barrier array id %d\n", myproc()->pid, barr_inst, barr_id);
+  printf("%d: Entered barrier#%d for barrier array id %d\n", myproc()->pid, barrier_instance_no, barrier_id);
 
 
-  if(barr[barr_id].counter != n){
-    cond_wait(&barr[barr_id].cv, &barr[barr_id].lock);
+  if(barriers[barrier_id].counter != n){
+    cond_wait(&barriers[barrier_id].cv, &barriers[barrier_id].lock);
   }
   else{
-    barr[barr_id].counter = 0;
-    cond_broadcast(&barr[barr_id].cv);
+    barriers[barrier_id].counter = 0;
+    cond_broadcast(&barriers[barrier_id].cv);
   }
 
-  printf("%d: Finished barrier#%d for barrier array id %d\n", myproc()->pid, barr_inst, barr_id);
+  printf("%d: Finished barrier#%d for barrier array id %d\n", myproc()->pid, barrier_instance_no, barrier_id);
   
   return 0;
 }
@@ -245,13 +245,13 @@ uint64
 sys_barrier_alloc(void)
 {
     for(int i=0; i<10; ++i){
-      acquiresleep(&barr[i].lock);
-      if(barr[i].counter == -1){
-        barr[i].counter = 0;
-        releasesleep(&barr[i].lock);
+      acquiresleep(&barriers[i].lock);
+      if(barriers[i].counter == -1){
+        barriers[i].counter = 0;
+        releasesleep(&barriers[i].lock);
         return i;
       }
-      releasesleep(&barr[i].lock);
+      releasesleep(&barriers[i].lock);
     } 
   return -1;
 }
@@ -259,13 +259,13 @@ sys_barrier_alloc(void)
 uint64 
 sys_barrier_free(void)
 {
-   int barr_id;
-   if(argint(0, &barr_id) < 0){
+   int barrier_id;
+   if(argint(0, &barrier_id) < 0){
     return -1;
    }
-   barr[barr_id].counter = -1;
-   initsleeplock(&barr[barr_id].lock, "barrier_lock");
-   initsleeplock(&barr[barr_id].cv.lk, "barrier_cv_lock");
+   barriers[barrier_id].counter = -1;
+   initsleeplock(&barriers[barrier_id].lock, "barrier_lock");
+   cond_init(&barriers[barrier_id].cv);
 
    return 0;
 
@@ -283,8 +283,8 @@ sys_buffer_cond_init(void)
     buffer[i].x = -1;
     buffer[i].full = 0;
     initsleeplock(&buffer[i].lock, "buffer_lock");
-    initsleeplock(&buffer[i].inserted.lk, "insert");
-    initsleeplock(&buffer[i].deleted.lk, "delete");
+    cond_init(&buffer[i].inserted);
+    cond_init(&buffer[i].deleted);
   }
   return 0;
 }

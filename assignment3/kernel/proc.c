@@ -22,6 +22,8 @@ struct spinlock pid_lock;
 extern void forkret(void);
 static void freeproc(struct proc *p);
 
+struct spinlock condsleep_lock;
+
 //Stats
 static int batch_start = 0x7FFFFFFF;
 static int batchsize = 0;
@@ -74,6 +76,7 @@ procinit(void)
   
   initlock(&pid_lock, "nextpid");
   initlock(&wait_lock, "wait_lock");
+  initlock(&condsleep_lock, "condsleep_lock");
   for(p = proc; p < &proc[NPROC]; p++) {
       initlock(&p->lock, "proc");
       p->kstack = KSTACK((int) (p - proc));
@@ -984,8 +987,10 @@ condsleep(struct cond_t* chan, struct sleeplock *lk)
   // (wakeup locks p->lock),
   // so it's okay to release lk.
 
+  acquire(&condsleep_lock);
   acquire(&p->lock);  //DOC: sleeplock1
   releasesleep(lk);
+  release(&condsleep_lock);
 
   // Go to sleep.
   p->chan = chan;
@@ -1074,7 +1079,7 @@ wakeupone(void *chan)
       }
       release(&p->lock);
       if(waken)
-        return;
+        break;
     }
   }
 }

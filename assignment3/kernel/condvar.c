@@ -13,3 +13,7 @@ void cond_signal (struct cond_t *cv) {
 void cond_broadcast (struct cond_t *cv) {
     wakeup(cv);
 }
+
+void cond_init (struct cond_t *cv) {
+    initsleeplock(&cv->lk, "condition_variable");
+}

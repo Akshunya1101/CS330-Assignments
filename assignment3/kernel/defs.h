@@ -196,11 +196,12 @@ void            virtio_disk_intr(void);
 #define NELEM(x) (sizeof(x)/sizeof((x)[0]))
 
 // condvar.c
-void cond_wait (struct cond_t *cv, struct sleeplock *lock);
-void cond_signal (struct cond_t *cv);
-void cond_broadcast (struct cond_t *cv);
+void cond_wait (struct cond_t *, struct sleeplock *);
+void cond_signal (struct cond_t *);
+void cond_broadcast (struct cond_t *);
+void cond_init (struct cond_t *);
 
 // semaphore.c
-void sem_init (struct sem_t *z, int value);
-void sem_wait (struct sem_t *z);
-void sem_post (struct sem_t *z);
+void sem_init (struct sem_t *, int );
+void sem_wait (struct sem_t *);
+void sem_post (struct sem_t *);
